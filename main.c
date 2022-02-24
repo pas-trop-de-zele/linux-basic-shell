@@ -5,8 +5,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/fcntl.h>
 
 #define MAX_CMD_LINE_ARGS 128
+
+bool input_redirect = false;
+bool output_redirect = false;
+int redirect_argument_index = -1;
 
 int min(int a, int b) { return a < b ? a : b; }
 
@@ -15,10 +20,24 @@ int parse(char *input, char *argv[])
     int argument_start = 0;
     int arg_no = 0;
     int i = 0;
+    input_redirect = false;
+    output_redirect = false;
+    redirect_argument_index = -1;
 
     int input_length = strlen(input);
     while (i < input_length + 1)
     {
+        if (input[i] == '<')
+        {
+            input_redirect = true;
+            redirect_argument_index = arg_no;
+        }
+        else if (input[i] == '>')
+        {
+            output_redirect = true;
+            redirect_argument_index = arg_no;
+        }
+
         if (input[i] == ' ' || i == input_length)
         {
             if (argument_start < i)
@@ -43,10 +62,6 @@ int execute(char *input)
     memset(shell_argv, 0, MAX_CMD_LINE_ARGS * sizeof(char));
 
     int shell_argc = parse(input, shell_argv);
-    for (int i = 0; i < shell_argc; i++)
-    {
-        printf("%s \n", shell_argv[i]);
-    }
 
     int status = 0;
     pid_t pid = fork();
@@ -54,15 +69,43 @@ int execute(char *input)
     if (pid < 0)
     {
         fprintf(stderr, "Fork() failed\n");
-    } // send to stderr
+    }
     else if (pid == 0)
-    { // child
+    {
+        if (redirect_argument_index != -1)
+        {
+            shell_argv[redirect_argument_index] = NULL;
+            char *file_name = shell_argv[redirect_argument_index + 1];
+            if (input_redirect)
+            {
+                int file = open(file_name, O_RDONLY);
+                if (file == -1)
+                {
+                    printf("FILE DOES NOT EXIST!\n");
+                    exit(-1);
+                }
+                dup2(file, STDIN_FILENO);
+                close(file);
+            }
+            else if (output_redirect)
+            {
+                int file = open(file_name, O_WRONLY | O_CREAT, 0777);
+                if (file == -1)
+                {
+                    printf("FILE DOES NOT EXIST!\n");
+                    exit(-1);
+                }
+                dup2(file, STDOUT_FILENO);
+                close(file);
+            }
+        }
+
         int ret = 0;
-        // if ((ret = execlp("cal", "cal", NULL)) < 0) {  // can do it arg by arg, ending in NULL
         if ((ret = execvp(shell_argv[0], shell_argv)) < 0)
         {
             fprintf(stderr, "execlp(%s) failed with error code: %d\n", *shell_argv, ret);
         }
+
         printf("\n");
     }
     else

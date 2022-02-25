@@ -129,8 +129,6 @@ int execute(char *input)
             {
                 exit(1);
             }
-            // printf("%s", shell_argv[0]);
-            // printf("%s", shell_argv[pipe_argument_index + 1]);
 
             pid_t write_proc = fork();
             if (write_proc < 0)
@@ -149,27 +147,18 @@ int execute(char *input)
                 close(fd[1]);
             }
 
-            pid_t read_proc = fork();
-            if (read_proc < 0)
+            close(fd[1]);
+            dup2(fd[0], STDIN_FILENO);
+            int ret = 0;
+            if ((ret = execvp(shell_argv[pipe_argument_index + 1], shell_argv + pipe_argument_index + 1)) < 0)
             {
-                exit(1);
+                fprintf(stderr, "execlp(%s) failed with error code: %d\n", *shell_argv, ret);
             }
-            else if (read_proc == 0)
-            {
-                close(fd[1]);
-                dup2(fd[0], STDIN_FILENO);
-                int ret = 0;
-                if ((ret = execvp(shell_argv[pipe_argument_index + 1], shell_argv + pipe_argument_index + 1)) < 0)
-                {
-                    fprintf(stderr, "execlp(%s) failed with error code: %d\n", *shell_argv, ret);
-                }
-                close(fd[0]);
-            }
+            close(fd[0]);
 
             close(fd[0]);
             close(fd[1]);
             waitpid(write_proc, NULL, 0);
-            waitpid(read_proc, NULL, 0);
         }
         else
         {
@@ -227,6 +216,8 @@ int main(int argc, const char *argv[])
             }
             else
             {
+                fflush(stdout);
+                printf("%s\n", last_input);
                 execute(last_input);
             }
         }
